@@ -1,0 +1,62 @@
+import ezdxf
+import matplotlib.pyplot as plt
+from shapely.geometry import LineString, box
+from shapely.ops import polygonize
+
+# === 1. Завантаження DXF ===
+doc = ezdxf.readfile("roof_shape.dxf")
+msp = doc.modelspace()
+
+lines = [LineString([(e.dxf.start.x, e.dxf.start.y),
+                     (e.dxf.end.x, e.dxf.end.y)]) for e in msp.query("LINE")]
+polygons = list(polygonize(lines))
+poly = polygons[0]   # беремо перший полігон (дах)
+
+# === 2. Параметри панелей ===
+orientation = "portrait"  # або "landscape"
+panel_w, panel_h = (1.0, 2.0) if orientation == "portrait" else (2.0, 1.0)
+gap = 0.1  # відстань між панелями
+
+# === 3. Функція розміщення панелей ===
+def fill_polygon(poly, w, h, gap, offset_x=0, offset_y=0):
+    panels = []
+    minx, miny, maxx, maxy = poly.bounds
+    y = miny + gap + offset_y
+    while y + h <= maxy - gap:
+        x = minx + gap + offset_x
+        while x + w <= maxx - gap:
+            p = box(x, y, x + w, y + h)
+            if poly.contains(p):
+                panels.append(p)
+            x += w + gap
+        y += h + gap
+    return panels
+
+# === 4. Перебір зсувів (оптимізація кількості) ===
+best_panels = []
+best_offset = (0, 0)
+
+for dx in [i * 0.1 for i in range(0, 10)]:
+    for dy in [i * 0.1 for i in range(0, 10)]:
+        panels = fill_polygon(poly, panel_w, panel_h, gap, dx, dy)
+        if len(panels) > len(best_panels):
+            best_panels = panels
+            best_offset = (dx, dy)
+
+print(f"Максимум панелей: {len(best_panels)}")
+print(f"Найкращий зсув: X={best_offset[0]:.2f} м, Y={best_offset[1]:.2f} м")
+print(f"Орієнтація панелей: {orientation}")
+
+# === 5. Візуалізація ===
+fig, ax = plt.subplots(figsize=(8, 8))
+x, y = poly.exterior.xy
+ax.fill(x, y, color="lightgray", alpha=0.3, label="Дах")
+
+for p in best_panels:
+    x, y = p.exterior.xy
+    ax.fill(x, y, alpha=0.8, color="dodgerblue", edgecolor="black")
+
+ax.set_aspect("equal", "box")
+ax.legend()
+plt.title(f"Панелей: {len(best_panels)} ({orientation})")
+plt.show()
